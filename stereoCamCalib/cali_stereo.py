@@ -16,8 +16,8 @@ import draw as dr
 CHARUCOTYPE = cv2.aruco.DICT_5X5_250
 BOARDHIGHT = 18
 BOARDWIDTH = 25
-CHECKERSIZE = 7.5 # 15mm (you could choose any unit, but have to be consistant. I use mm)
-MARKERSIZE = 6 # In OpenCV, marker refers to the Aruco patter. 
+CHECKERSIZE = 15 # 15mm (you could choose any unit, but have to be consistant. I use mm)
+MARKERSIZE = 12 # In OpenCV, marker refers to the Aruco patter. 
 
 
 
@@ -69,10 +69,6 @@ def readCamParams(camNum):
 
             Parameters:
                         camNum: unique camera number
-                        intrin: 3 * 3 camera intrinsic matrix in numpy format
-                                The description of camera matrix could be found: https://docs.opencv.org/3.4/d9/d6a/group__aruco.html#ga54cf81c2e39119a84101258338aa7383
-                        distor: distortion coefficients. 
-                        size: image size (w, h)
 
 
             Return:
@@ -109,7 +105,7 @@ def readCamParams(camNum):
         return intrin, distor, size
         
 
-def saveCamParams(camNum, intrin, distor, size):
+def saveCamParams(camNum, intrin, distor, size, rot, trans):
     '''
             Save camera to a file
 
@@ -153,17 +149,21 @@ def saveCamParams(camNum, intrin, distor, size):
     alpha = intrin[0][1]
     (nx, ny) = size
     k1, k2, k3, k4, k5 = distor.flatten()
+    rx, ry, rz = rot.flatten()
+    tx, ty, tz = trans.flatten()
     
     fileName = os.path.join('camera/', '{}.cam'.format(name))
     with open(fileName, 'w') as f:
         header = 'name fx fy cx cy alpha nx ny k1 k2 k3 k4 k5 tx ty tz rx ry rz zn zf'
-        data = '{} {} {} {} {} {} {} {} {} {} {} {} {} 0 0 0 0 0 0 0 0'.format(
+        data = '{} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} {} 0 1500'.format(
                 name,
                 fx, fy,
                 cx, cy,
                 alpha,
                 nx, ny,
-                k1, k2, k3, k4, k5
+                k1, k2, k3, k4, k5,
+                tx, ty, tz,
+                rx, ry, rz,
             )
         
         f. writelines('\n'.join([header, data]))
@@ -252,28 +252,30 @@ if __name__ == '__main__':
         # set up charuco tyep        
         dictionary = cv2.aruco.Dictionary_get(CHARUCOTYPE)
         board = cv2.aruco.CharucoBoard_create(BOARDWIDTH, BOARDHIGHT, CHECKERSIZE, MARKERSIZE, dictionary)
-       
+        imgExt = '.png'
 
-        datadir = './caliImg/7/'
-        framesL = [datadir + f for f in os.listdir(datadir) if f.endswith(".jpg") ]
+        camL = 4
+        datadir = './caliImg/cam{}/'.format(camL)
+        framesL = [datadir + f for f in os.listdir(datadir) if f.endswith(imgExt) ]
+        
         framesL.sort(key = lambda name: int(name[ name.rfind('/') + 1 : name.rfind('.')])) # sort image by the number
 
         left_img = cv2.imread(framesL[0])
         left_grey = cv2.cvtColor(left_img, cv2.COLOR_BGR2GRAY)
         
-        cam_intrinL, distorL, sizeL = readCamParams(7)
+        cam_intrinL, distorL, sizeL = readCamParams(camL)
         allCornersL, allIdsL = detectCorners(framesL, board) 
   
        
 
-
-        datadir = './caliImg/8/'
-        framesR = [datadir + f for f in os.listdir(datadir) if f.endswith(".jpg") ]
+        camR = 5 
+        datadir =  './caliImg/cam{}/'.format(camR)
+        framesR = [datadir + f for f in os.listdir(datadir) if f.endswith(imgExt) ]
         framesR.sort(key = lambda name: int(name[ name.rfind('/') + 1 : name.rfind('.')])) # sort image by the number
         right_img = cv2.imread(framesR[0])
         right_grey = cv2.cvtColor(right_img, cv2.COLOR_BGR2GRAY)
         
-        cam_intrinR, distorR, sizeR = readCamParams(8)
+        cam_intrinR, distorR, sizeR = readCamParams(camR)
         allCornersR, allIdsR = detectCorners(framesR, board) 
 
 
@@ -288,29 +290,48 @@ if __name__ == '__main__':
                         finalObjs.append(o)
                         finalPointsL.append(l)
                         finalPointsR.append(r)
-        
 
+
+        
         
         ret, K1, D1, K2, D2, R, T, E, F  = cv2.stereoCalibrate(finalObjs, finalPointsL, finalPointsR, 
                 cam_intrinL, distorL, cam_intrinR, distorR, sizeR,
-                flags = cv2.CALIB_USE_INTRINSIC_GUESS, 
+                flags = cv2.CALIB_FIX_INTRINSIC | 0, 
+                
                 criteria=(cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_COUNT, 10000, 1e-9))
-
         print("Stereo Calibration Error: {}".format(ret))        
 
+        RT1 = np.eye(3)
+
+        T1 = np.array([[0],[0],[0]]) 
+        rt1, _ = cv2.Rodrigues(RT1)
         
+        saveCamParams(4, K1, D1, sizeL, rt1, T1)
+        RT2 = R @ RT1
+        T2 = R @ T1 + T
+
+        rt2, _ = cv2.Rodrigues(RT2) 
+
+        saveCamParams(5, K2, D2, sizeR, rt2, T2)
+        exit(0)
        
-        rectL, rectR, projMatrixL, projMatrixR, Q, roi_L, roi_ = cv2.stereoRectify(cam_intrinL, distorL, cam_intrinR, distorR,
-						sizeR, R, T, alpha = -1, flags = 0)
-       
-       
-        stereoMapL = cv2.initUndistortRectifyMap(cam_intrinL, distorL, rectL, projMatrixL, sizeL, cv2.CV_16SC2)
+        rectL, rectR, projMatrixL, projMatrixR, Q, roi_L, roi_R = cv2.stereoRectify(K1, D1, K2, D2,
+						sizeR, R, T, alpha = -1, flags =cv2.CALIB_FIX_INTRINSIC + cv2.CALIB_RATIONAL_MODEL + cv2.CALIB_FIX_PRINCIPAL_POINT )
+
+   
+
+
+        
+
+        stereoMapL = cv2.initUndistortRectifyMap(K1, D1, rectL, projMatrixL, sizeL, cv2.CV_16SC2)
         undistortedL= cv2.remap(left_img, stereoMapL[0], stereoMapL[1], cv2.INTER_LANCZOS4, cv2.BORDER_CONSTANT, 0)
         undistoredL = dr.drawEpiLine(undistortedL)
-        cv2.imwrite('left_test.png', undistortedL)
+        cv2.imwrite('left_test.jpg', undistortedL)
 
 
-        stereoMapR = cv2.initUndistortRectifyMap(cam_intrinR, distorL, rectR, projMatrixR, sizeR, cv2.CV_16SC2)
+        stereoMapR = cv2.initUndistortRectifyMap(K2, D2, rectR, projMatrixR, sizeR, cv2.CV_16SC2)
         undistortedR= cv2.remap(right_img, stereoMapR[0],  stereoMapR[1], cv2.INTER_LANCZOS4, cv2.BORDER_CONSTANT, 0)
         undistoredR = dr.drawEpiLine(undistortedR)
-        cv2.imwrite('right_test.png', undistortedR)
+        cv2.imwrite('right_test.jpg', undistortedR)
+
+        

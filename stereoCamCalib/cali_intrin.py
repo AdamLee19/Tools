@@ -1,4 +1,3 @@
-from re import I
 import cv2, os
 import numpy as np
 
@@ -15,8 +14,8 @@ import numpy as np
 CHARUCOTYPE = cv2.aruco.DICT_5X5_250
 BOARDHIGHT = 18
 BOARDWIDTH = 25
-CHECKERSIZE = 7.5 # 15mm (you could choose any unit, but have to be consistant. I use mm)
-MARKERSIZE = 6 # In OpenCV, marker refers to the Aruco patter. 
+CHECKERSIZE = 15 # 15mm (you could choose any unit, but have to be consistant. I use mm)
+MARKERSIZE = 12 # In OpenCV, marker refers to the Aruco patter. 
 
 
 
@@ -172,11 +171,11 @@ def saveCamParams(camNum, intrin, distor, size):
             --- The Following parameters are all 0 for now. They will be set after setero calibration for each pair ---
             tx, ty, tz: extrinsic translation
             rx, ry, rz: extrinsic rotation (given in Rodrigues notation)
-            zn, zf: near and far planes of the working volume (don't know how to get this from OpenCV) TODO
+            zn, zf: near and far planes of the working volume (don't know how to get this from OpenCV) 
 
     '''
     
-    name = 'cam{}'.format(camNum)
+    name = '{}'.format(camNum)
     fx = intrin[0][0]
     fy = intrin[1][1]
     cx = intrin[0][2]
@@ -213,11 +212,11 @@ if __name__ == '__main__':
        
 
         caliFolder = 'caliImg'
-        camNum = '8'
+        camNum = 'cam5'
         
         
 
-        frames = [os.path.join(caliFolder, camNum, f) for f in os.listdir(os.path.join(caliFolder, camNum)) if f.endswith(".jpg") ] 
+        frames = [os.path.join(caliFolder, camNum, f) for f in os.listdir(os.path.join(caliFolder, camNum)) if f.endswith(".png") ] 
       
         # OpenCV 'requires' at least 14 images to get a good calibration
         # if len(frames) == 0 or len(frames) < 14: exit(0)
@@ -225,6 +224,7 @@ if __name__ == '__main__':
         img =  cv2.imread(frames[0]) 
         grey = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) 
         error, cam_intrin, distor = getCamIntrin(frames, board)
+      
         print('\tCalibration Error: {}'.format(error))
         saveCamParams(camNum, cam_intrin, distor, grey.shape[::-1])
 
